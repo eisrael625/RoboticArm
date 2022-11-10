@@ -1,0 +1,584 @@
+;Final Code
+#include <Servo.h>
+
+Servo myservo1; // create servo object to control a servo
+Servo myservo2; // create servo object to control a servo
+Servo myservo3; // create servo object to control a servo
+Servo myservo4; // create servo object to control a servo
+
+int potpin1 = 0; // analog pin used to connect the potentiometer
+int potpin2 = A1; // analog pin used to connect the potentiometer
+int potpin3 = A2; // analog pin used to connect the potentiometer
+int potpin4 = A3; // analog pin used to connect the potentiometer
+
+
+int val1 = 0; // variable to read the value from the analog pin
+int val1avg = 0; // variable to read the value from the analog pin
+int val1RevertTo; // variable that keeps value of potentiameter
+int val2 = 0; // variable to read the value from the analog pin
+int val2avg = 0; // variable to read the value from the analog pin
+int val2RevertTo; // variable that keeps value of potentiameter
+int val3 = 0; // variable to read the value from the analog pin
+int val3avg = 0; // variable to read the value from the analog pin
+int val3RevertTo ; // variable that keeps value of potentiameter
+int val4 = 0; // variable to read the value from the analog pin
+int val4avg = 0; // variable to read the value from the analog pin
+int val4RevertTo; // variable that keeps value of potentiameter
+int timeslooped = 0; // variable to read the value from the analog pin
+
+// For ultrasonic
+const int trigPin = 6;
+const int echoPin = 5;
+// defines variables
+long duration;
+int distance;
+
+int mode = 1; //Mode of either manual, autonomous, or bluetooth
+int setposition = 0; // variable that allows arm to fully get to starting spot in mode 2
+int rotatingPosition = 1; // part of rotating function in mode 2
+bool clockwise = true; // part of rotating function in mode 2
+bool foundObject = false; // part of search function in mode 2
+int endposition = 0; // part of rotating function in mode 2
+
+
+#include <SoftwareSerial.h> // Allows communication with Bluetooth
+
+SoftwareSerial mySerial(0, 1); // RX, TX
+int data = ""; // variable for ncoming data
+int miniData = 0; 
+int miniData2 = 0;// variables for data in gyroscope mode
+int blueServo1 = 90; // variables for orientation of servos while in bluetooth mode
+int blueServo2 = 90;
+int blueServo3 = 45;
+int blueServo4 = 90; // variables for orientation of servos while in bluetooth mode
+int dataTenNum = 0;
+
+void setup() {
+myservo1.attach(9); // attaches the servo1 on pin 9 to the servo object
+myservo2.attach(10); // attaches the servo2 on pin 10 to the servo object
+myservo3.attach(11); // attaches the servo3 on pin 11 to the servo object
+myservo4.attach(3); // attaches the servo4 on pin 4 to the servo object
+
+pinMode(2, INPUT); // attach button reader
+pinMode(8, OUTPUT); // attach mode indicator LED
+
+pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+
+
+// Open serial communications and wait for port to open:
+Serial.begin(57600);
+pinMode(8, OUTPUT);
+while (!Serial) {
+; // wait for serial port to connect. Needed for native USB port only
+}
+
+
+Serial.println("Initiated");
+
+// set the data rate for the SoftwareSerial port
+mySerial.begin(9600);
+mySerial.println("Hello, world?");
+}
+
+
+void loop() {
+
+checkForButton(); // function that checks if the button is pressed and if it is, changes modes
+if (mode == 3)
+{
+myservo1.write(blueServo1);
+myservo2.write(blueServo2);
+myservo3.write(blueServo3);
+myservo4.write(blueServo4); // start servos at certain position
+if (mySerial.available() and data != 11) // if recieve data and not in gyroscope mode
+{
+data = mySerial.read(); // define data as the num recieved from BT
+Serial.write(data);
+Serial.print(data);
+delay(100);
+
+
+}
+
+while (data == 11) //When data is 11, and stay in function until it is not
+{
+
+miniData = mySerial.read(); // new variable is for the data recieved while in 11
+
+
+if (miniData > 80 and miniData < 120) // input sent from BLUETOOTH for x axis
+{
+myservo1.write(map(miniData, 90, 110, 180, 0)); // scale it and move base servo
+}
+if ((miniData) > 180 and miniData < 220)
+{
+
+myservo4.write(map(miniData, 190, 210, 60, 180));
+myservo2.write(map(miniData, 190, 210, 60, 180)); // move arm up and forwards
+}
+if ((miniData) == 13)
+{
+
+myservo3.write(90); // open arm
+}
+if ((miniData) == 14)
+{
+
+myservo3.write(0); // close arm
+}
+if ((miniData) == 15)
+{
+data = 30;
+return();// leave gyroscope mode
+}
+}
+if (data == 10) // search and stop function
+{
+
+if (( abs(blueServo1 - 1)) > 3 or ( abs(blueServo4 - 108)) > 3 or ( abs(blueServo2 - 60)) > 3)
+{ // this variable ensures that all arms are in correct possition before starting to search
+goGraduallyTowards(&blueServo1, 1); // function that gradually increments a value to another value
+goGraduallyTowards(&blueServo4, 108);
+goGraduallyTowards(&blueServo3, 90);
+goGraduallyTowards(&blueServo2, 60);
+myservo1.write(blueServo1); // sets the servo position according to the scaled value
+myservo2.write(blueServo2);
+myservo3.write(blueServo3);
+myservo4.write(blueServo4);
+Serial.println("STILL SETTING");
+foundObject = false;
+dataTenNum++;
+}
+else if (foundObject == false and dataTenNum > 10) // if position is in start, and object is not yet found
+{
+
+goAround(); // function that sweeps arm across and searches for object in proximity
+Serial.print("GOING AROUND");
+}
+else if ( foundObject == true and dataTenNum > 10) // if position is in start, and object is not yet found
+{
+
+setposition = 0;
+foundObject = false;
+blueServo1 = rotatingPosition;
+blueServo2 = 60;
+blueServo3 = 90;
+blueServo4 = 108;
+data = 30;
+rotatingPosition = 0; // reset all variables and make it leave function
+}
+}
+
+else if (data == 1 ) // brings the arm to position of the potentiameters and then back to mode 1
+{
+while (( abs(blueServo2 - val2RevertTo)) > 3 and ( abs(blueServo1 - val1RevertTo)) > 3)
+{
+goGraduallyTowards(&blueServo1, val1RevertTo);
+goGraduallyTowards(&blueServo2, val2RevertTo);
+goGraduallyTowards(&blueServo3, val3RevertTo);
+goGraduallyTowards(&blueServo4, val4RevertTo);
+myservo1.write(blueServo1); // sets the servo position according to the scaled value
+myservo2.write(blueServo2);
+myservo3.write(blueServo3);
+myservo4.write(blueServo4);
+delay(10);
+}
+mode = 1;
+}
+else if (data == 2 ) // enter mode 2
+{
+
+while (( abs(blueServo2 - val2RevertTo)) > 3 and ( abs(blueServo1 - val1RevertTo)) > 3)
+{
+goGraduallyTowards(&blueServo1, val1RevertTo);
+goGraduallyTowards(&blueServo2, val2RevertTo);
+goGraduallyTowards(&blueServo3, val3RevertTo);
+goGraduallyTowards(&blueServo4, val4RevertTo);
+myservo1.write(blueServo1); // sets the servo position according to the scaled value
+myservo2.write(blueServo2);
+myservo3.write(blueServo3);
+myservo4.write(blueServo4);
+delay(50);
+}
+
+mode = 2;
+
+
+}
+else if (data == 3 and blueServo1 < 180 ) // base right
+{
+blueServo1 = blueServo1 + 1;
+delay(20);
+
+}
+else if (data == 4 and blueServo1 > 0) //base left
+{
+blueServo1 = blueServo1 - 1;
+delay(20);
+
+}
+else if (data == 9 and blueServo2 < 180 ) // arm up
+{
+blueServo2 = blueServo2 + 1;
+delay(20);
+
+}
+else if (data == 0 and blueServo2 > 60) //arm down
+{
+
+blueServo2 = blueServo2 - 1;
+delay(20);
+}
+else if (data == 7 and blueServo3 < 90 ) //claw open
+{
+
+blueServo3 = blueServo3 + 1;
+delay(20);
+
+}
+else if (data == 8 and blueServo3 > 0) // claw close
+{
+
+blueServo3 = blueServo3 - 1;
+delay(20);
+}
+else if (data == 5 and blueServo4 < 180) //claw forward
+{
+
+blueServo4 = blueServo4 + 1;
+delay(20);
+
+}
+else if (data == 6 and blueServo4 > 60) //claw back
+{
+
+blueServo4 = blueServo4 - 1;
+delay(20);
+}
+
+}
+
+if (mode == 1) // if in manual mode
+{
+if (mySerial.available()) { //if data is recieved while in mode 1
+
+while (( abs(blueServo2 - val2RevertTo)) > 3 and ( abs(blueServo1 - val1RevertTo)) > 3)
+{
+goGraduallyTowards(&val1avg, 90);
+goGraduallyTowards(&val2avg, 90);
+goGraduallyTowards(&val3avg, 45);
+goGraduallyTowards(&val4avg, 90);
+myservo1.write(val1avg); // go to starting position of BT mode
+myservo2.write(val2avg);
+myservo3.write(val3avg);
+myservo4.write(val4avg);
+val1RevertTo = val1avg;
+val2RevertTo = val2avg;
+val4RevertTo = val3avg;
+val4RevertTo = val4avg;
+delay(20);
+}
+
+
+mode = 3;
+blueServo1 = 90;
+blueServo2 = 90;
+blueServo3 = 45;
+blueServo4 = 90;
+}
+//NOW REGULAR MANUAL CODE
+timeslooped = timeslooped + 1;
+val1 = val1 + analogRead(potpin1); // reads the value of the potentiometer (value between 0 and 1023) and makes the value, the sum of seven
+val2 = val2 + analogRead(potpin2); // this is to make it jitter less because it is an average
+val3 = val3 + analogRead(potpin3);
+val4 = val4 + analogRead(potpin4);
+
+if (timeslooped >= 7) //if seven values have been added
+{
+val1avg = val1 / 7; // take an average
+val2avg = val2 / 7;
+val3avg = val3 / 7;
+val4avg = val4 / 7;
+
+val1avg = map(val1avg, 0, 1023, 0, 180); // scale it to use it with the servo (value between 0 and 180), using the average value
+val2avg = map(val2avg, 0, 1023, 60, 180);
+val3avg = map(val3avg, 2, 1023, 0, 90);
+val4avg = map(val4avg, 0, 1023, 60, 180);
+
+
+val1RevertTo = val1avg;
+val2RevertTo = val2avg;
+val3RevertTo = val3avg;
+val4RevertTo = val4avg;
+
+myservo1.write(val1avg); // sets the servo position according to the scaled value
+myservo2.write(val2avg);
+myservo3.write(val3avg);
+myservo4.write(val4avg);
+//
+timeslooped = 0; // reset loop
+val1 = 0;
+val2 = 0;
+val3 = 0;
+val4 = 0;
+}
+}
+else if ( mode == 2)
+{
+
+if (setposition < 200) { // this variable ensures that all arms are in correct possition before starting to search
+goGraduallyTowards(&val1avg, 1); // function that gradually increments a value to another value
+goGraduallyTowards(&val4avg, 108);
+goGraduallyTowards(&val3avg, 90);
+goGraduallyTowards(&val2avg, 60);
+myservo1.write(val1avg); // sets the servo position according to the scaled value
+myservo2.write(val2avg);
+myservo3.write(val3avg);
+myservo4.write(val4avg);
+Serial.println("STILL SETTING");
+}
+else if (setposition >= 200 and foundObject == false) // if position is in start, and object is not yet found
+{
+
+goAround(); // function that sweeps arm across and searches for object in proximity
+
+}
+
+else if (setposition >= 200 and foundObject == true)
+{
+
+while (distance > 4 and distance < 20) // if object is found, make the arm go forward(and up to stay at level) until 3 cm away from object
+{
+Ultrasonic();
+val2avg = val2avg + 4;
+val4avg = val4avg + 3;
+// val4avg=val4avg+5;
+delay(200);
+myservo2.write(val2avg);
+myservo4.write(val4avg);
+Serial.println(distance);
+}
+while ((distance <= 4) or (distance > 20)) // once within 3 (or the reading reads incorrect value because it is too close) close arms
+{
+if (val3avg > 0) {
+val3avg--;
+delay(30);
+myservo3.write(val3avg);
+}
+
+else if (val3avg < 70) //and (abs(val4avg-130)>5) and (abs(val2avg-90)>5) // once arms are closed, move object back and up
+{
+if (endposition < 50)
+{
+val1 = analogRead(potpin1); // reads the value of the potentiometer (value between 0 and 1023) and makes the value, the sum of seven
+val2 = analogRead(potpin2); // this is to make it jitter less because it is an average
+val3 = analogRead(potpin3);
+val4 = analogRead(potpin4);
+
+val1 = map(val1, 0, 1023, 0, 180); // scale it to use it with the servo (value between 0 and 180), using the average value
+val2 = map(val2, 0, 1023, 60, 180);
+val3 = map(val3, 2, 1023, 0, 90);
+val4 = map(val4, 0, 1023, 60, 180);
+goGraduallyTowards(&val1avg, val1);
+goGraduallyTowards(&val2avg, val2);
+goGraduallyTowards(&val3avg, val3);
+goGraduallyTowards(&val4avg, val4);
+myservo4.write(val4avg); //
+myservo2.write(val2avg); //
+myservo1.write(val1avg); //
+myservo3.write(val3avg); //
+endposition = endposition + 1;
+Serial.println("STILL HERE");
+Serial.println(endposition);
+}
+else if (endposition >= 50)
+{
+setposition = 0; // go back to mode one and reset variables
+rotatingPosition = 1;
+clockwise = true;
+foundObject = false;
+mode = 1;
+endposition = 0;
+Serial.println("YES");
+Serial.println("MODE");
+Serial.println(mode);
+return (mode);
+
+}
+}
+}
+
+
+}
+
+}
+
+}
+
+int goGraduallyTowards(int *x, int y)
+{
+Serial.println("GRADUAL");
+if ( (abs(*x - y)) < 3)
+{
+setposition = setposition + 1;
+
+//
+}
+else if ( *x < y)
+{
+*x = *x + 1;
+Serial.println("value x up");
+Serial.println(*x);
+//delay(500);
+}
+else if ( *x > y)
+{
+*x = *x - 1;
+Serial.println(*x);
+Serial.println("value x down");
+// delay(500);
+}
+
+//return x;
+
+}
+//PROBLEM- – DOESNT RESET NUMBER OF INT X
+//MODEL LIKE OTHER ONE
+
+
+int goAround()
+{
+
+while (( rotatingPosition < 180 ) and (clockwise == true) )
+{
+Ultrasonic();
+rotatingPosition = rotatingPosition + 3;
+delay(200);
+Serial.println( distance);
+myservo1.write(rotatingPosition);
+
+if (distance < 20)
+{
+foundObject = true;
+return (distance);
+
+}
+
+
+}
+while (( rotatingPosition >= 180) and (clockwise == true))
+{
+clockwise = false;
+rotatingPosition = 178;
+myservo1.write(rotatingPosition);
+
+return (rotatingPosition);
+
+}
+while (( rotatingPosition > 1) and (clockwise == false))
+{
+rotatingPosition = rotatingPosition - 3;
+delay(30);
+Serial.println( rotatingPosition);
+
+myservo1.write(rotatingPosition);
+
+
+}
+
+while (( rotatingPosition <= 1) and (clockwise == false))
+{
+rotatingPosition = 1;
+clockwise = true;
+myservo1.write(rotatingPosition);
+return (rotatingPosition);
+
+}
+
+}
+int Ultrasonic()
+{
+digitalWrite(trigPin, LOW);
+delayMicroseconds(2);
+// Sets the trigPin on HIGH state for 10 micro seconds
+digitalWrite(trigPin, HIGH);
+delayMicroseconds(10);
+digitalWrite(trigPin, LOW);
+// Reads the echoPin, returns the sound wave travel time in microseconds
+duration = pulseIn(echoPin, HIGH);
+// Calculating the distance
+distance = duration * 0.034 / 2;
+Serial.println(distance);
+}
+
+int checkForButton()
+{
+
+
+if (digitalRead(2) == true) // IF SWITCH IS PRESSED
+{
+delay(500);
+
+if (mode == 1)
+{
+mode = 2;
+val1RevertTo = val1avg;
+val2RevertTo = val2avg;
+val3RevertTo = val3avg;
+val4RevertTo = val4avg;
+Serial.println("MAKING ");
+}
+else if (mode == 2) /// if the mode is one, make it two. If two, make one
+{
+
+mode = 1;
+goGraduallyTowards(&val1avg, val1RevertTo);
+goGraduallyTowards(&val2avg, val2RevertTo);
+goGraduallyTowards(&val3avg, val3RevertTo);
+goGraduallyTowards(&val4avg, val4RevertTo);
+myservo1.write(val1avg); // sets the servo position according to the scaled value
+myservo2.write(val2avg);
+myservo3.write(val3avg);
+myservo4.write(val4avg);
+Serial.println("MOVING BACK");
+
+}
+}
+if (digitalRead(2) == true) // IF SWITCH IS PRESSED
+{
+delay(500);
+// Serial.println("READ"); //print read
+if (mode == 1)
+{
+mode = 2;
+val1RevertTo = val1avg;
+val2RevertTo = val2avg;
+val3RevertTo = val3avg;
+val4RevertTo = val4avg;
+}
+else if (mode == 2 and (abs(val1avg - val1RevertTo) < 5) ) /// if the mode is one, make it two. If two, make one
+{
+mode = 1;
+goGraduallyTowards(&val1avg, val1RevertTo);
+goGraduallyTowards(&val2avg, val2RevertTo);
+goGraduallyTowards(&val3avg, val3RevertTo);
+goGraduallyTowards(&val4avg, val4RevertTo);
+myservo1.write(val1avg); // sets the servo position according to the scaled value
+myservo2.write(val2avg);
+myservo3.write(val3avg);
+myservo4.write(val4avg);
+
+}
+}
+
+if (mode == 2)
+{
+digitalWrite(8, true); // IF mode Two, turn on light
+}
+else if (mode == 1)
+{
+digitalWrite(8, false);
+setposition = 0;
+}// waits for the servo to get there
+}
